@@ -67,15 +67,15 @@ private[spark] class PartitionPerformanceReceiver (override val rpcEnv: RpcEnv) 
 case class PartitionPerformanceMetric(val nAndP: NameAndPartition,
                                       val executorId: String,
                                       val taskId: Long,
+                                      val requestSeqNo: SequenceNumber,
                                       val batchSize: Int,
                                       val receiveTimeInMillis: Long) {
 
   override def toString: String = {
-    s"Partition: $nAndP - ExecutorId: $executorId -  TaskId: $taskId - Batch Size = $batchSize - Elapsed Time(MS): $receiveTimeInMillis"
+    s"Partition: $nAndP - ExecutorId: $executorId -  TaskId: $taskId - Request Seq. No. = $requestSeqNo - Batch Size = $batchSize - Elapsed Time(MS): $receiveTimeInMillis"
   }
 }
 
 private[spark] object PartitionPerformanceReceiver {
   val ENDPOINT_NAME = "PartitionPerformanceReceiver"
-
 }
