@@ -246,7 +246,7 @@ private[client] class CachedEventHubsReceiver private (ehConf: EventHubsConf,
 
     //Navid
     //CachedEventHubsReceiver.partitionPerformanceReceiverRef.send(PartitionPerformanceMetric(s"RPC msg from Partition: $nAndP -- spark-${SparkEnv.get.executorId}-$taskId -- received $batchCount messages"))
-    sendPartitionPerformanceToDriver(PartitionPerformanceMetric(nAndP, SparkEnv.get.executorId, taskId, elapsedTimeMs))
+    sendPartitionPerformanceToDriver(PartitionPerformanceMetric(nAndP, SparkEnv.get.executorId, taskId, batchCount, elapsedTimeMs))
     logInfo(s"PartitionPerformanceReceiverRef.send completed in spark-${SparkEnv.get.executorId}-$taskId")
     // Divan
 
@@ -289,6 +289,8 @@ private[client] class CachedEventHubsReceiver private (ehConf: EventHubsConf,
     }
   }
 
+  // send the partition perforamcne metric (elapsed time for receiving events in the batch) to the
+  // driver without waiting fro any response.
   private def sendPartitionPerformanceToDriver(partitionPerformance: PartitionPerformanceMetric) = {
     CachedEventHubsReceiver.partitionPerformanceReceiverRef.send(partitionPerformance)
   }
