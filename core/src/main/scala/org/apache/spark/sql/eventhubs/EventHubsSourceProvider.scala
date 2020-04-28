@@ -36,6 +36,7 @@ import org.apache.spark.eventhubs.utils.SimulatedClient
 import org.apache.spark.eventhubs.{ EventHubsConf, _ }
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
+import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.util.{ ArrayBasedMapData, DateTimeUtils }
 import org.apache.spark.sql.execution.streaming.{ Sink, Source }
@@ -45,6 +46,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.{ AnalysisException, DataFrame, SQLContext, SaveMode }
 import org.apache.spark.unsafe.types.UTF8String
 import org.json4s.jackson.Serialization
+import org.apache.spark.SparkEnv
 
 import collection.JavaConverters._
 
@@ -140,6 +142,10 @@ private[sql] class EventHubsSourceProvider
 }
 
 private[sql] object EventHubsSourceProvider extends Serializable {
+
+  val partitionPerformanceReceiverRef: RpcEndpointRef = SparkEnv.get.rpcEnv.setupEndpoint(
+    PartitionPerformanceReceiver.ENDPOINT_NAME, new PartitionPerformanceReceiver(SparkEnv.get.rpcEnv))
+
   def eventHubsSchema: StructType = {
     StructType(
       Seq(
