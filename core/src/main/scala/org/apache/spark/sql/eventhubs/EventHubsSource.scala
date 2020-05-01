@@ -23,20 +23,15 @@ import java.time.Duration
 
 import org.apache.commons.io.IOUtils
 import org.apache.spark.SparkContext
-import org.apache.spark.eventhubs.rdd.{ EventHubsRDD, OffsetRange }
-import org.apache.spark.eventhubs.{ EventHubsConf, NameAndPartition, _ }
+import org.apache.spark.eventhubs.rdd.{EventHubsRDD, OffsetRange}
+import org.apache.spark.eventhubs.{EventHubsConf, NameAndPartition, _}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.scheduler.ExecutorCacheTaskLocation
 import org.apache.spark.SparkEnv
-import org.apache.spark.sql.execution.streaming.{
-  HDFSMetadataLog,
-  Offset,
-  SerializedOffset,
-  Source
-}
+import org.apache.spark.sql.execution.streaming.{HDFSMetadataLog, Offset, SerializedOffset, Source}
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{ DataFrame, SQLContext }
+import org.apache.spark.sql.{DataFrame, SQLContext}
 
 /**
  * A [[Source]] that reads data from Event Hubs.
@@ -85,10 +80,10 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
   private val maxOffsetsPerTrigger: Option[Long] =
     Option(parameters.get(MaxEventsPerTriggerKey).map(_.toLong).getOrElse(partitionCount * 1000))
 
-  // set the max batch receive time in the partitionPerformanceReceiver instance
-  private val maxBatchReceiveTime : Duration =
-    parameters.get(MaxBatchReceiveTimeKey).map(str => Duration.parse(str)).getOrElse(DefaultMaxBatchReceiveTime)
-  EventHubsSource.partitionPerformanceReceiver.setMaxBatchReceiveTime(maxBatchReceiveTime)
+  // navid - TODO change the default value to false
+  private val slowPartitionAdjustment: Boolean =
+    parameters.get(SlowPartitionAdjustmentKey).map(_.toBoolean).getOrElse(true)
+  PartitionsStatusTracker.setParitionCount(partitionCount)
 
   private lazy val initialPartitionSeqNos = {
     val metadataLog =
@@ -314,6 +309,10 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
       }
     }.toArray
 
+    // Navid
+    addCurrentBatchToStatusTracker(offsetRanges)
+    // Divan
+
     val rdd =
       EventHubsSourceProvider.toInternalRow(new EventHubsRDD(sc, ehConf.trimmed, offsetRanges))
     logInfo(
@@ -323,9 +322,26 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
   }
 
   /**
+   * Add the newly generated batch to the status tracker. If there are TRACKING_BATCH_COUNT batches in the
+   * tracker, remove the oldest one before adding the new batch.
+   */
+  private def addCurrentBatchToStatusTracker(offsetRanges: Array[OffsetRange]) = {
+    localBatchId += 1
+    val batchIdToRemove = localBatchId - TRACKING_BATCH_COUNT
+    if(batchIdToRemove >= 0) {
+      partitionsStatusTracker.removeBatch(batchIdToRemove)
+    }
+    partitionsStatusTracker.addBatch(localBatchId, offsetRanges: Array[OffsetRange])
+  }
+
+  /**
    * Stop this source and any resources it has allocated
    */
   override def stop(): Unit = synchronized {
+    // Navid clean up Partition Status Tracker
+    partitionsStatusTracker.cleanUp
+    localBatchId = -1
+    // Divan
     ehClient.close()
   }
 
@@ -350,8 +366,11 @@ private[eventhubs] object EventHubsSource {
 
   private[eventhubs] val VERSION = 1
 
-  val partitionPerformanceReceiver: PartitionPerformanceReceiver = new PartitionPerformanceReceiver(SparkEnv.get.rpcEnv)
-
+  // RPC endpoint for partition performacne communciation in the driver
+  private val TRACKING_BATCH_COUNT = 3
+  private var localBatchId = -1
+  val partitionsStatusTracker = PartitionsStatusTracker.apply
+  val partitionPerformanceReceiver: PartitionPerformanceReceiver = new PartitionPerformanceReceiver(SparkEnv.get.rpcEnv, partitionsStatusTracker)
   val partitionPerformanceReceiverRef: RpcEndpointRef = SparkEnv.get.rpcEnv.setupEndpoint(
     PartitionPerformanceReceiver.ENDPOINT_NAME, partitionPerformanceReceiver)
 

@@ -23,13 +23,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rpc.{RpcEnv, RpcEndpoint}
 import org.apache.spark.SparkContext
 
-private[spark] class PartitionPerformanceReceiver (override val rpcEnv: RpcEnv) extends RpcEndpoint with Logging{
-
-  private var maxBatchReceiveTime: Long = DefaultMaxBatchReceiveTime.toMillis
-
-  def setMaxBatchReceiveTime(time: Duration) = {
-    this.maxBatchReceiveTime = time.toMillis
-  }
+private[spark] class PartitionPerformanceReceiver (override val rpcEnv: RpcEnv, val statusTracker: PartitionsStatusTracker) extends RpcEndpoint with Logging{
 
   override def onStart(): Unit = {
     logInfo("Start PartitionPerformanceReceiver RPC endpoint")
@@ -41,6 +35,7 @@ private[spark] class PartitionPerformanceReceiver (override val rpcEnv: RpcEnv) 
    // }
     case ppm: PartitionPerformanceMetric => {
       logInfo(s"Receive PartitionPerformanceMetric with msg $ppm")
+      statusTracker.updatePartitionPerformance(ppm.nAndP, ppm.requestSeqNo, ppm.batchSize, ppm.receiveTimeInMillis)
     }
     case _ => {
       logInfo(s"Receive something other than PartitionPerformanceMetric in PartitionPerformanceReceiver. It's not acceptable!")
@@ -50,16 +45,6 @@ private[spark] class PartitionPerformanceReceiver (override val rpcEnv: RpcEnv) 
   override def onStop(): Unit = {
     logInfo("Stop PartitionPerformanceReceiver RPC endpoint")
   }
-
-  // A Partition is considered to be slow if:
-  // the total receive time for the current batch is beyond the MaxBatchReceiveTime
-  private def isPartitionSlow(ppm: PartitionPerformanceMetric): Boolean = {
-    if(ppm.receiveTimeInMillis > maxBatchReceiveTime)
-      true
-    else
-      false
-  }
-
 }
 
 //case class PartitionPerformanceMetric(msg: String)
