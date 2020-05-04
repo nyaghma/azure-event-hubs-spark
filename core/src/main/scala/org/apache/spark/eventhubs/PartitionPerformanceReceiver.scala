@@ -20,7 +20,7 @@ package org.apache.spark.eventhubs
 import java.time.Duration
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.rpc.{RpcEnv, RpcEndpoint}
+import org.apache.spark.rpc.{RpcEndpoint, RpcEnv}
 import org.apache.spark.SparkContext
 
 private[spark] class PartitionPerformanceReceiver (override val rpcEnv: RpcEnv, val statusTracker: PartitionsStatusTracker) extends RpcEndpoint with Logging{
@@ -30,15 +30,12 @@ private[spark] class PartitionPerformanceReceiver (override val rpcEnv: RpcEnv, 
   }
 
   override def receive: PartialFunction[Any, Unit] = {
-   // case PartitionPerformanceMetric(msg) => {
-   //   logInfo(s"Receive PartitionPerformanceMetric with msg = $msg")
-   // }
     case ppm: PartitionPerformanceMetric => {
-      logInfo(s"Receive PartitionPerformanceMetric with msg $ppm")
+      logDebug(s"Received PartitionPerformanceMetric $ppm")
       statusTracker.updatePartitionPerformance(ppm.nAndP, ppm.requestSeqNo, ppm.batchSize, ppm.receiveTimeInMillis)
     }
     case _ => {
-      logInfo(s"Receive something other than PartitionPerformanceMetric in PartitionPerformanceReceiver. It's not acceptable!")
+      logError(s"Received an unknown message in PartitionPerformanceReceiver. It's not acceptable!")
     }
   }
 
@@ -46,8 +43,6 @@ private[spark] class PartitionPerformanceReceiver (override val rpcEnv: RpcEnv, 
     logInfo("Stop PartitionPerformanceReceiver RPC endpoint")
   }
 }
-
-//case class PartitionPerformanceMetric(msg: String)
 
 case class PartitionPerformanceMetric(val nAndP: NameAndPartition,
                                       val executorId: String,

@@ -21,6 +21,8 @@ import java.io._
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 
+import scala.collection.breakOut
+
 import org.apache.commons.io.IOUtils
 import org.apache.spark.SparkContext
 import org.apache.spark.eventhubs.rdd.{EventHubsRDD, OffsetRange}
@@ -82,7 +84,7 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
 
   // navid - TODO change the default value to false
   private val slowPartitionAdjustment: Boolean =
-    parameters.get(SlowPartitionAdjustmentKey).map(_.toBoolean).getOrElse(true)
+    parameters.get(SlowPartitionAdjustmentKey).map(_.toBoolean).getOrElse(false)
 
   PartitionsStatusTracker.setDefaultValuesInTracker(partitionCount, ehName, ehConf.receiverTimeout.getOrElse(DefaultReceiverTimeout).toMillis)
   // Divan
@@ -204,7 +206,12 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
       until: Map[NameAndPartition, SequenceNumber],
       fromNew: Map[NameAndPartition, SequenceNumber]): Map[NameAndPartition, SequenceNumber] = {
     //  Navid
-    val parPerfPer :Option[Map[NameAndPartition, Float]] = partitionsStatusTracker.partitionsPerformancePercentage()
+    val partitionsPerformancePercentage: Map[NameAndPartition, Double] = if(slowPartitionAdjustment) {
+        partitionsStatusTracker.partitionsPerformancePercentage.getOrElse(
+          (for (pid <- 0 until partitionCount) yield (NameAndPartition(ehName, pid), 1.0))(breakOut))
+      } else {
+        Map[NameAndPartition, Double]()
+      }
     // Divan
 
     val sizes = until.flatMap {
@@ -213,7 +220,17 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
         from.get(nameAndPartition).orElse(fromNew.get(nameAndPartition)).flatMap { begin =>
           val size = end - begin
           logDebug(s"rateLimit $nameAndPartition size is $size")
-          if (size > 0) Some(nameAndPartition -> size) else None
+          // Navid
+          if(slowPartitionAdjustment) {
+            val adjustedSize = Math.ceil(size * partitionsPerformancePercentage(nameAndPartition)).toLong
+            logDebug(s"Slow partition adjustment is on, so adjust rateLimit $nameAndPartition size to $adjustedSize")
+            if (adjustedSize > 0) Some(nameAndPartition -> adjustedSize) else None
+          }
+          else {
+            if (size > 0) Some(nameAndPartition -> size) else None
+          }
+
+          // Divan
         }
     }
     val total = sizes.values.sum.toDouble
@@ -316,7 +333,10 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
     }.toArray
 
     // Navid
-    addCurrentBatchToStatusTracker(offsetRanges)
+    if(slowPartitionAdjustment) {
+      logDebug(s"Slow partition adjustment is on, add the current batch with offsetRanges = $offsetRanges to the tracker.")
+      addCurrentBatchToStatusTracker(offsetRanges)
+    }
     // Divan
 
     val rdd =
@@ -345,8 +365,11 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
    */
   override def stop(): Unit = synchronized {
     // Navid clean up Partition Status Tracker
-    partitionsStatusTracker.cleanUp
-    localBatchId = -1
+    if(slowPartitionAdjustment) {
+      logDebug(s"Slow partition adjustment is on, cleaning up the partition performance tracker before stopping.")
+      partitionsStatusTracker.cleanUp
+      localBatchId = -1
+    }
     // Divan
     ehClient.close()
   }

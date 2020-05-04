@@ -154,11 +154,11 @@ class PartitionsStatusTracker extends Logging{
    * value between [0-1] where 0 means the partition is not responding and 1 means it's working wihtout any
    * perforamnce issue. This information can be used to adjust the batch size for each partition in the next batch.
    */
-  def partitionsPerformancePercentage(): Option[Map[NameAndPartition, Float]] = {
+  def partitionsPerformancePercentage(): Option[Map[NameAndPartition, Double]] = {
     // if there is no batch in the tracker, return the default performance (all in 100%)
     if(batchesStatus.isEmpty) {
-      logDebug(s"There is no batch in the tracker, so return $defaultPartitonPerformancePercentage")
-      defaultPartitonPerformancePercentage
+      logDebug(s"There is no batch in the tracker, so return None")
+      None
     }
     // find the latest batch with enough updates
     // In Scala 2.13 we can use: val latestUpdatedBatch = batchesStatus.maxByOption(b => b._2.receivedEnoughUpdates)
@@ -173,8 +173,8 @@ class PartitionsStatusTracker extends Logging{
     latestUpdatedBatch match {
       case None =>  {
         logDebug(s"No batch has ${PartitionsStatusTracker.enoughUpdatesCount} partitions with updates (enough updates), " +
-          s"so return $defaultPartitonPerformancePercentage")
-        defaultPartitonPerformancePercentage
+          s"so return None")
+        None
       }
       case Some(batch) =>  {
         logDebug(s"Batch ${batch.batchId} is the latest batch with enough updates. Caculate and return its perforamnce.")
@@ -198,14 +198,14 @@ object PartitionsStatusTracker {
   var partitionsCount: Int = 1
   var receiverTimeOutInMillis: Long = 60000
   var enoughUpdatesCount: Int = 1
-  var defaultPartitonPerformancePercentage: Option[Map[NameAndPartition, Float]] = None
+ // var defaultPartitonPerformancePercentage: Option[Map[NameAndPartition, Double]] = None
 
   def setDefaultValuesInTracker(numOfPartitions: Int, ehName: String, receiverMaxTime: Long) = {
     partitionsCount = numOfPartitions
     receiverTimeOutInMillis = receiverMaxTime
     enoughUpdatesCount = (partitionsCount/2) + 1
-    defaultPartitonPerformancePercentage = Some(
-      (for (pid <- 0 until numOfPartitions) yield (NameAndPartition(ehName, pid), 1f))(breakOut))
+  //  defaultPartitonPerformancePercentage = Some(
+  //    (for (pid <- 0 until numOfPartitions) yield (NameAndPartition(ehName, pid), 1))(breakOut))
   }
 
   private def partitionSeqNoKey(nAndP: NameAndPartition, seqNo: SequenceNumber): String =
@@ -220,7 +220,7 @@ private[eventhubs] class BatchStatus(val batchId: Long,
 
   private var hasEnoughUpdates: Boolean = false
 
-  private var performancePercentages:Option[Map[NameAndPartition, Float]] = None
+  private var performancePercentages:Option[Map[NameAndPartition, Double]] = None
 
   def updatePartitionPerformance(nAndP: NameAndPartition,
                                  batchSize: Int,
@@ -239,7 +239,7 @@ private[eventhubs] class BatchStatus(val batchId: Long,
     hasEnoughUpdates
   }
 
-  def getPerformancePercentages: Option[Map[NameAndPartition, Float]] = performancePercentages match {
+  def getPerformancePercentages: Option[Map[NameAndPartition, Double]] = performancePercentages match {
       case Some(completedPerformancePercentages) => performancePercentages
       case None => {
         // just use partitions which have batchSize > 0 and have been updated
@@ -249,8 +249,8 @@ private[eventhubs] class BatchStatus(val batchId: Long,
         // check if there is no updated partition with batchSize > 0
         if(partitionsTimePerEvent.isEmpty) {
           logDebug(s"There is no updated partition with batchSize greater than 0 in batch $batchId, " +
-            s"so return ${PartitionsStatusTracker.defaultPartitonPerformancePercentage} ")
-          PartitionsStatusTracker.defaultPartitonPerformancePercentage
+            s"so return None ")
+          None
         }
         else {
           // calculate the standard deviation
@@ -264,7 +264,7 @@ private[eventhubs] class BatchStatus(val batchId: Long,
 
           // update performance metrics in each paritition and return that mapping
           paritionsStatus.foreach(par => par._2.updatePerformancePercentage(avgTimePerEvent + stdDevTimePerEvent))
-          val ppp: Map[NameAndPartition, Float] = paritionsStatus.map(par => (par._1, par._2.performancePercentage))(breakOut)
+          val ppp: Map[NameAndPartition, Double] = paritionsStatus.map(par => (par._1, par._2.performancePercentage))(breakOut)
           // if all partitions have been updated, save the result in performancePercentages
           if(paritionsStatus.values.filter(ps => ps.hasBeenUpdated).size == PartitionsStatusTracker.partitionsCount) {
             performancePercentages = Some(ppp)
@@ -286,13 +286,13 @@ private[eventhubs] class PartitionStatus(val nAndP: NameAndPartition,
   // a partition with an empty batch (batchSize = 0) doesn't receive any update message from the executor
   var hasBeenUpdated: Boolean = if(emptyBatch) true else false
 
-  var performancePercentage: Float = 1
+  var performancePercentage: Double = 1
 
   private var batchSize: Int = if(emptyBatch) 0 else -1
   // total receive time for the batch in milli seconds
   private var batchReceiveTimeInMillis: Long = if(emptyBatch) 0 else -1
 
-  var timePerEventInMillis: Float = if(emptyBatch) 0 else -1
+  var timePerEventInMillis: Double = if(emptyBatch) 0 else -1
 
   // Update the status of this partition with the received performance metrics
   def updatePerformanceMetrics(bSize: Int, receiveTimeInMillis: Long): Any = {
@@ -300,7 +300,7 @@ private[eventhubs] class PartitionStatus(val nAndP: NameAndPartition,
     this.batchReceiveTimeInMillis = receiveTimeInMillis
     this.hasBeenUpdated = true
     if(batchSize != 0)
-      this.timePerEventInMillis = this.batchReceiveTimeInMillis.toFloat / this.batchSize
+      this.timePerEventInMillis = this.batchReceiveTimeInMillis.toDouble / this.batchSize
     logDebug(s"updatePerformanceMetrics for partition = $nAndP with request sequence number = $requestSeqNo contains" +
       s" batchSize = $batchSize and total receive time(ms) = $batchReceiveTimeInMillis")
   }
@@ -309,7 +309,7 @@ private[eventhubs] class PartitionStatus(val nAndP: NameAndPartition,
     if(!emptyBatch && hasBeenUpdated){
       if(timePerEventInMillis > averagePlusStdDev) {
         //TODO check the calculation here again
-        performancePercentage = 1 - (timePerEventInMillis - averagePlusStdDev.toFloat) / (PartitionsStatusTracker.receiverTimeOutInMillis.toFloat - averagePlusStdDev.toFloat)
+        performancePercentage = 1 - (timePerEventInMillis - averagePlusStdDev.toDouble) / (PartitionsStatusTracker.receiverTimeOutInMillis.toDouble - averagePlusStdDev.toDouble)
       }
     }
   }
