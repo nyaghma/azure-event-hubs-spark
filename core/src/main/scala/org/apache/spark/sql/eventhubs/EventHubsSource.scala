@@ -83,7 +83,9 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
   // navid - TODO change the default value to false
   private val slowPartitionAdjustment: Boolean =
     parameters.get(SlowPartitionAdjustmentKey).map(_.toBoolean).getOrElse(true)
-  PartitionsStatusTracker.setParitionCount(partitionCount)
+
+  PartitionsStatusTracker.setDefaultValuesInTracker(partitionCount, ehName, ehConf.receiverTimeout.getOrElse(DefaultReceiverTimeout).toMillis)
+  // Divan
 
   private lazy val initialPartitionSeqNos = {
     val metadataLog =
@@ -201,6 +203,10 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
       from: Map[NameAndPartition, SequenceNumber],
       until: Map[NameAndPartition, SequenceNumber],
       fromNew: Map[NameAndPartition, SequenceNumber]): Map[NameAndPartition, SequenceNumber] = {
+    //  Navid
+    val parPerfPer :Option[Map[NameAndPartition, Float]] = partitionsStatusTracker.partitionsPerformancePercentage()
+    // Divan
+
     val sizes = until.flatMap {
       case (nameAndPartition, end) =>
         // If begin isn't defined, something's wrong, but let alert logic in getBatch handle it
