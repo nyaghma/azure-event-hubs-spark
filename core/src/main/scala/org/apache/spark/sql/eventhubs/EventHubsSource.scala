@@ -82,12 +82,12 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
   private val maxOffsetsPerTrigger: Option[Long] =
     Option(parameters.get(MaxEventsPerTriggerKey).map(_.toLong).getOrElse(partitionCount * 1000))
 
-  // navid - TODO change the default value to false
+  // set slow partition adjustment flag and static values in the tracker
   private val slowPartitionAdjustment: Boolean =
     parameters.get(SlowPartitionAdjustmentKey).map(_.toBoolean).getOrElse(false)
-
   PartitionsStatusTracker.setDefaultValuesInTracker(partitionCount, ehName, ehConf.receiverTimeout.getOrElse(DefaultReceiverTimeout).toMillis)
-  // Divan
+  val defaultPartitionsPerformancePercentage: Map[NameAndPartition, Double] =
+    (for (pid <- 0 until partitionCount) yield (NameAndPartition(ehName, pid), 1.0))(breakOut)
 
   private lazy val initialPartitionSeqNos = {
     val metadataLog =
@@ -205,14 +205,13 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
       from: Map[NameAndPartition, SequenceNumber],
       until: Map[NameAndPartition, SequenceNumber],
       fromNew: Map[NameAndPartition, SequenceNumber]): Map[NameAndPartition, SequenceNumber] = {
-    //  Navid
+
+    // if slowPartitionAdjustment is on, get the latest partition performance percentages
     val partitionsPerformancePercentage: Map[NameAndPartition, Double] = if(slowPartitionAdjustment) {
-        partitionsStatusTracker.partitionsPerformancePercentage.getOrElse(
-          (for (pid <- 0 until partitionCount) yield (NameAndPartition(ehName, pid), 1.0))(breakOut))
-      } else {
-        Map[NameAndPartition, Double]()
-      }
-    // Divan
+      partitionsStatusTracker.partitionsPerformancePercentage.getOrElse(defaultPartitionsPerformancePercentage)
+    } else {
+      defaultPartitionsPerformancePercentage
+    }
 
     val sizes = until.flatMap {
       case (nameAndPartition, end) =>
@@ -220,17 +219,16 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
         from.get(nameAndPartition).orElse(fromNew.get(nameAndPartition)).flatMap { begin =>
           val size = end - begin
           logDebug(s"rateLimit $nameAndPartition size is $size")
-          // Navid
+          // if slowPartitionAdjustment is on, adjust the batch sizes based on partition performance percentages
           if(slowPartitionAdjustment) {
             val adjustedSize = Math.ceil(size * partitionsPerformancePercentage(nameAndPartition)).toLong
-            logDebug(s"Slow partition adjustment is on, so adjust rateLimit $nameAndPartition size to $adjustedSize")
+            logDebug(s"Slow partition adjustment is on, so adjust rateLimit $nameAndPartition size to $adjustedSize " +
+              s"instead of $size because of the performance percentage = ${partitionsPerformancePercentage(nameAndPartition)}")
             if (adjustedSize > 0) Some(nameAndPartition -> adjustedSize) else None
           }
           else {
             if (size > 0) Some(nameAndPartition -> size) else None
           }
-
-          // Divan
         }
     }
     val total = sizes.values.sum.toDouble
@@ -332,13 +330,10 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
       }
     }.toArray
 
-    // Navid
+    // if slowPartitionAdjustment is on, add the current batch to the perforamnce tracker
     if(slowPartitionAdjustment) {
-      logDebug(s"Slow partition adjustment is on, add the current batch with offsetRanges = $offsetRanges to the tracker.")
       addCurrentBatchToStatusTracker(offsetRanges)
     }
-    // Divan
-
     val rdd =
       EventHubsSourceProvider.toInternalRow(new EventHubsRDD(sc, ehConf.trimmed, offsetRanges))
     logInfo(
@@ -354,6 +349,8 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
   private def addCurrentBatchToStatusTracker(offsetRanges: Array[OffsetRange]) = {
     localBatchId += 1
     val batchIdToRemove = localBatchId - TRACKING_BATCH_COUNT
+    logDebug(s"Slow partition adjustment is on, add the current batch $localBatchId to and remove the batch " +
+      s"${if(batchIdToRemove >= 0) batchIdToRemove else None} from the tracker.")
     if(batchIdToRemove >= 0) {
       partitionsStatusTracker.removeBatch(batchIdToRemove)
     }
@@ -364,13 +361,12 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
    * Stop this source and any resources it has allocated
    */
   override def stop(): Unit = synchronized {
-    // Navid clean up Partition Status Tracker
+    // if slowPartitionAdjustment is on, clean up Partition Status Tracker before closing
     if(slowPartitionAdjustment) {
       logDebug(s"Slow partition adjustment is on, cleaning up the partition performance tracker before stopping.")
       partitionsStatusTracker.cleanUp
       localBatchId = -1
     }
-    // Divan
     ehClient.close()
   }
 

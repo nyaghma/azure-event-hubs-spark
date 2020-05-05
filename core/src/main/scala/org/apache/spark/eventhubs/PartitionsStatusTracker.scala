@@ -155,30 +155,32 @@ class PartitionsStatusTracker extends Logging{
    * perforamnce issue. This information can be used to adjust the batch size for each partition in the next batch.
    */
   def partitionsPerformancePercentage(): Option[Map[NameAndPartition, Double]] = {
-    // if there is no batch in the tracker, return the default performance (all in 100%)
+    // if there is no batch in the tracker, return None
     if(batchesStatus.isEmpty) {
       logDebug(s"There is no batch in the tracker, so return None")
       None
     }
-    // find the latest batch with enough updates
-    // In Scala 2.13 we can use: val latestUpdatedBatch = batchesStatus.maxByOption(b => b._2.receivedEnoughUpdates)
-    implicit val ordering = new Ordering[(Long, BatchStatus)] {
-      override def compare(x: (Long, BatchStatus), y: (Long, BatchStatus)): Int = (x._1 - y._1).toInt
-    }
-    val batchesWithEnoughUpdates = batchesStatus.filter(b => b._2.receivedEnoughUpdates)
-    val latestUpdatedBatch: Option[BatchStatus] =
-      if(batchesWithEnoughUpdates.isEmpty) None else Some(batchesWithEnoughUpdates.max._2)
-
-
-    latestUpdatedBatch match {
-      case None =>  {
-        logDebug(s"No batch has ${PartitionsStatusTracker.enoughUpdatesCount} partitions with updates (enough updates), " +
-          s"so return None")
-        None
+    else {
+      // find the latest batch with enough updates
+      // In Scala 2.13 we can use: val latestUpdatedBatch = batchesStatus.maxByOption(b => b._2.receivedEnoughUpdates)
+      implicit val ordering = new Ordering[(Long, BatchStatus)] {
+        override def compare(x: (Long, BatchStatus), y: (Long, BatchStatus)): Int = (x._1 - y._1).toInt
       }
-      case Some(batch) =>  {
-        logDebug(s"Batch ${batch.batchId} is the latest batch with enough updates. Caculate and return its perforamnce.")
-        batch.getPerformancePercentages
+      val batchesWithEnoughUpdates = batchesStatus.filter(b => b._2.receivedEnoughUpdates)
+      val latestUpdatedBatch: Option[BatchStatus] =
+        if (batchesWithEnoughUpdates.isEmpty) None else Some(batchesWithEnoughUpdates.max._2)
+
+
+      latestUpdatedBatch match {
+        case None => {
+          logDebug(s"No batch has ${PartitionsStatusTracker.enoughUpdatesCount} partitions with updates (enough updates), " +
+            s"so return None")
+          None
+        }
+        case Some(batch) => {
+          logDebug(s"Batch ${batch.batchId} is the latest batch with enough updates. Caculate and return its perforamnce.")
+          batch.getPerformancePercentages
+        }
       }
     }
   }

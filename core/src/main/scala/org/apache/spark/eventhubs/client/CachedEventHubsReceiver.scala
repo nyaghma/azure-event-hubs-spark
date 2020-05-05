@@ -244,11 +244,10 @@ private[client] class CachedEventHubsReceiver private (ehConf: EventHubsConf,
     val (result, validate) = sorted.duplicate
     val elapsedTimeMs = TimeUnit.NANOSECONDS.toMillis(elapsedTimeNs)
 
-    //Navid
+    // if slowPartitionAdjustment is on, send the partition performance for this batch to the driver
     if(ehConf.slowPartitionAdjustment) {
       sendPartitionPerformanceToDriver(PartitionPerformanceMetric(nAndP, SparkEnv.get.executorId, taskId, requestSeqNo, batchCount, elapsedTimeMs))
     }
-    // Divan
 
     if (metricPlugin.isDefined) {
       val (validateSize, batchSizeInBytes) =

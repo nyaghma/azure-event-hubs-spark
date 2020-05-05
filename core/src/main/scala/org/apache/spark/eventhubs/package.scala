@@ -46,7 +46,6 @@ package object eventhubs {
   val DefaultUseSimulatedClient = "false"
   val DefaultPartitionPreferredLocationStrategy = "Hash"
   val DefaultUseExclusiveReceiver = "true"
-  // navid -- TODO: change DefaultSlowPartitionAdjustment to false
   val DefaultSlowPartitionAdjustment = "false"
   val StartingSequenceNumber = 0L
   val DefaultThreadPoolSize = 16
