@@ -234,6 +234,13 @@ private[client] class CachedEventHubsReceiver private (ehConf: EventHubsConf,
       awaitReceiveMessage(receiveOne(ehConf.receiverTimeout.getOrElse(DefaultReceiverTimeout),
                                      s"receive; $nAndP; seqNo: ${requestSeqNo + i}"),
                           requestSeqNo)
+    // Navid TEMP
+    if(nAndP.partitionId == 1) {
+      val tSleep: Long = 50
+      Thread.sleep(tSleep)
+      logDebug(s"NAVID: partition $nAndP slept for $tSleep millis")
+    }
+    // Divan
     // Combine and sort the data.
     val combined = first ++ theRest.flatten
     val sorted = combined.toSeq
@@ -289,7 +296,7 @@ private[client] class CachedEventHubsReceiver private (ehConf: EventHubsConf,
   }
 
   // send the partition perforamcne metric (elapsed time for receiving events in the batch) to the
-  // driver without waiting fro any response.
+  // driver without waiting for any response.
   private def sendPartitionPerformanceToDriver(partitionPerformance: PartitionPerformanceMetric) = {
     CachedEventHubsReceiver.partitionPerformanceReceiverRef.send(partitionPerformance)
     logDebug(s"spark-${SparkEnv.get.executorId}-${EventHubsUtils.getTaskId} sent PartitionPerformanceMetric " +

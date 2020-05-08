@@ -196,6 +196,7 @@ class PartitionsStatusTracker extends Logging{
 }
 
 object PartitionsStatusTracker {
+  private val _partitionsStatusTrackerInstance = new PartitionsStatusTracker
   val BATCH_NOT_FOUND: Long = -1
   var partitionsCount: Int = 1
   var receiverTimeOutInMillis: Long = 60000
@@ -213,7 +214,7 @@ object PartitionsStatusTracker {
   private def partitionSeqNoKey(nAndP: NameAndPartition, seqNo: SequenceNumber): String =
     s"(name=${nAndP.ehName},pid=${nAndP.partitionId},startSeqNo=$seqNo)".toLowerCase
 
-  def apply: PartitionsStatusTracker = new PartitionsStatusTracker
+  def getPartitionStatusTracker: PartitionsStatusTracker = _partitionsStatusTrackerInstance
 }
 
 
@@ -265,7 +266,7 @@ private[eventhubs] class BatchStatus(val batchId: Long,
           assert(avgTimePerEvent + stdDevTimePerEvent <= PartitionsStatusTracker.receiverTimeOutInMillis)
 
           // update performance metrics in each paritition and return that mapping
-          paritionsStatus.foreach(par => par._2.updatePerformancePercentage(avgTimePerEvent + stdDevTimePerEvent))
+          paritionsStatus.foreach(par => par._2.updatePerformancePercentage(avgTimePerEvent, stdDevTimePerEvent/*, partitionsTimePerEvent.max.toDouble*/))
           val ppp: Map[NameAndPartition, Double] = paritionsStatus.map(par => (par._1, par._2.performancePercentage))(breakOut)
           // if all partitions have been updated, save the result in performancePercentages
           if(paritionsStatus.values.filter(ps => ps.hasBeenUpdated).size == PartitionsStatusTracker.partitionsCount) {
@@ -307,11 +308,14 @@ private[eventhubs] class PartitionStatus(val nAndP: NameAndPartition,
       s" batchSize = $batchSize and total receive time(ms) = $batchReceiveTimeInMillis")
   }
 
-  def updatePerformancePercentage(averagePlusStdDev: Double): Unit = {
+  def updatePerformancePercentage(averageTimePerEvent: Double, standardDeviation: Double/*, maxTimePerEventInBatch: Double*/): Unit = {
+    val averagePlusStdDev: Double = averageTimePerEvent + standardDeviation
     if(!emptyBatch && hasBeenUpdated){
       if(timePerEventInMillis > averagePlusStdDev) {
         //TODO check the calculation here again
-        performancePercentage = 1 - (timePerEventInMillis - averagePlusStdDev.toDouble) / (PartitionsStatusTracker.receiverTimeOutInMillis.toDouble - averagePlusStdDev.toDouble)
+       // performancePercentage = 1 - (timePerEventInMillis - averagePlusStdDev.toDouble) / (PartitionsStatusTracker.receiverTimeOutInMillis.toDouble - averagePlusStdDev.toDouble)
+       // performancePercentage = 1 - ( (timePerEventInMillis - averagePlusStdDev.toDouble) / maxTimePerEventInBatch)
+        performancePercentage = averageTimePerEvent / timePerEventInMillis
       }
     }
   }

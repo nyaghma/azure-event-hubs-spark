@@ -34,7 +34,7 @@ import org.apache.qpid.proton.amqp.{
   UnsignedLong,
   UnsignedShort
 }
-import org.apache.spark.eventhubs.utils.{ EventHubsTestUtils, SimulatedClient }
+import org.apache.spark.eventhubs.utils.{ EventHubsTestUtils, SimulatedClient, SimulatedPartitionStatusTracker}
 import org.apache.spark.eventhubs.{ EventHubsConf, EventPosition, NameAndPartition }
 import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.execution.streaming._
@@ -128,6 +128,16 @@ class EventHubsSourceSuite extends EventHubsSourceTest {
   }
 
   private def getEventHubsConf(ehName: String): EventHubsConf = testUtils.getEventHubsConf(ehName)
+
+  // Navid
+ // val psTracker = EventHubsSource.partitionsStatusTracker
+
+  case class PartitionsStatusTrackerUpdate(nAndP: NameAndPartition, receiveTimeInMillis: Long) extends ExternalAction {
+    override def runAction(): Unit = {
+      SimulatedPartitionStatusTracker.updatePartitionPerformance(nAndP, 0L, 1, receiveTimeInMillis)
+    }
+  }
+  // Divan
 
   testWithUninterruptibleThread("deserialization of initial offset with Spark 2.1.0") {
     val eventHub = testUtils.createEventHubs(newEventHubs(), DefaultPartitionCount)
@@ -743,40 +753,43 @@ class EventHubsSourceSuite extends EventHubsSourceTest {
       StartStream(ProcessingTime(100), clock),
       waitUntilBatchProcessed,
       // we'll get one event per partition per trigger
-      CheckAnswer(0, 0, 0, 0),
+      CheckLastBatch(0, 0, 0, 0),
+      PartitionsStatusTrackerUpdate(NameAndPartition(eventHub.name, 0), 10L),
+      PartitionsStatusTrackerUpdate(NameAndPartition(eventHub.name, 1), 20L),
+      PartitionsStatusTrackerUpdate(NameAndPartition(eventHub.name, 2), 30L),
       AdvanceManualClock(100),
       waitUntilBatchProcessed,
       // four additional events
-      CheckAnswer(0, 0, 0, 0, 1, 1, 1, 1),
+      CheckLastBatch(1, 1, 1, 1),
       AdvanceManualClock(100),
       waitUntilBatchProcessed,
       // four additional events
-      CheckAnswer(0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2),
+      CheckLastBatch(2, 2, 2, 2),
       AdvanceManualClock(100),
       waitUntilBatchProcessed,
       // four additional events
-      CheckAnswer(0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3),
+      CheckLastBatch(3, 3, 3, 3),
       AdvanceManualClock(100),
       waitUntilBatchProcessed,
       // four additional events
-      CheckAnswer(0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4),
+      CheckLastBatch(4, 4, 4, 4),
       AdvanceManualClock(100),
       waitUntilBatchProcessed,
       // four additional events
-      CheckAnswer(0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5),
+      CheckLastBatch(5, 5, 5, 5),
       StopStream,
       StartStream(ProcessingTime(100), clock),
       waitUntilBatchProcessed,
       // four additional events
-      CheckAnswer(0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6),
+      CheckLastBatch(6, 6, 6, 6),
       AdvanceManualClock(100),
       waitUntilBatchProcessed,
       // four additional events
-      CheckAnswer(0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7),
+      CheckLastBatch(7, 7, 7, 7),
       AdvanceManualClock(100),
       waitUntilBatchProcessed,
       // four additional events
-      CheckAnswer(0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8)
+      CheckLastBatch(8, 8, 8, 8)
     )
     }
 }
