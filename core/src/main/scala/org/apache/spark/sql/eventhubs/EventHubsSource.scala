@@ -245,7 +245,7 @@ private[spark] class EventHubsSource private[eventhubs] (sqlContext: SQLContext,
             .get(nameAndPartition)
             .map { size =>
               val begin = from.getOrElse(nameAndPartition, fromNew(nameAndPartition))
-              // Navid
+              // adjust performance performance pewrcentages to use as much as events possible in the batch
               val perforamnceFactor: Double = if(slowPartitionAdjustment) {
                 partitionsPerformancePercentage(nameAndPartition) / averagePerforamnceFactor
               } else 1.0

@@ -193,6 +193,13 @@ class PartitionsStatusTracker extends Logging{
     batchesStatus.clear
     partitionSeqNoPairToBatchIdMap.clear
   }
+
+  /**
+   * This methods i being used for testing
+   */
+  def batchIdsInTracker: scala.collection.Set[Long] = {
+    this.batchesStatus.keySet
+  }
 }
 
 object PartitionsStatusTracker {
@@ -201,14 +208,11 @@ object PartitionsStatusTracker {
   var partitionsCount: Int = 1
   var receiverTimeOutInMillis: Long = 60000
   var enoughUpdatesCount: Int = 1
- // var defaultPartitonPerformancePercentage: Option[Map[NameAndPartition, Double]] = None
 
   def setDefaultValuesInTracker(numOfPartitions: Int, ehName: String, receiverMaxTime: Long) = {
     partitionsCount = numOfPartitions
     receiverTimeOutInMillis = receiverMaxTime
     enoughUpdatesCount = (partitionsCount/2) + 1
-  //  defaultPartitonPerformancePercentage = Some(
-  //    (for (pid <- 0 until numOfPartitions) yield (NameAndPartition(ehName, pid), 1))(breakOut))
   }
 
   private def partitionSeqNoKey(nAndP: NameAndPartition, seqNo: SequenceNumber): String =
@@ -237,7 +241,7 @@ private[eventhubs] class BatchStatus(val batchId: Long,
 
   def receivedEnoughUpdates : Boolean = {
     if(!hasEnoughUpdates) {
-      hasEnoughUpdates = paritionsStatus.values.filter(par => par.hasBeenUpdated).size > PartitionsStatusTracker.enoughUpdatesCount
+      hasEnoughUpdates = paritionsStatus.values.filter(par => par.hasBeenUpdated).size >= PartitionsStatusTracker.enoughUpdatesCount
     }
     hasEnoughUpdates
   }
@@ -266,7 +270,7 @@ private[eventhubs] class BatchStatus(val batchId: Long,
           assert(avgTimePerEvent + stdDevTimePerEvent <= PartitionsStatusTracker.receiverTimeOutInMillis)
 
           // update performance metrics in each paritition and return that mapping
-          paritionsStatus.foreach(par => par._2.updatePerformancePercentage(avgTimePerEvent, stdDevTimePerEvent/*, partitionsTimePerEvent.max.toDouble*/))
+          paritionsStatus.foreach(par => par._2.updatePerformancePercentage(avgTimePerEvent, stdDevTimePerEvent))
           val ppp: Map[NameAndPartition, Double] = paritionsStatus.map(par => (par._1, par._2.performancePercentage))(breakOut)
           // if all partitions have been updated, save the result in performancePercentages
           if(paritionsStatus.values.filter(ps => ps.hasBeenUpdated).size == PartitionsStatusTracker.partitionsCount) {
@@ -308,13 +312,10 @@ private[eventhubs] class PartitionStatus(val nAndP: NameAndPartition,
       s" batchSize = $batchSize and total receive time(ms) = $batchReceiveTimeInMillis")
   }
 
-  def updatePerformancePercentage(averageTimePerEvent: Double, standardDeviation: Double/*, maxTimePerEventInBatch: Double*/): Unit = {
+  def updatePerformancePercentage(averageTimePerEvent: Double, standardDeviation: Double): Unit = {
     val averagePlusStdDev: Double = averageTimePerEvent + standardDeviation
     if(!emptyBatch && hasBeenUpdated){
       if(timePerEventInMillis > averagePlusStdDev) {
-        //TODO check the calculation here again
-       // performancePercentage = 1 - (timePerEventInMillis - averagePlusStdDev.toDouble) / (PartitionsStatusTracker.receiverTimeOutInMillis.toDouble - averagePlusStdDev.toDouble)
-       // performancePercentage = 1 - ( (timePerEventInMillis - averagePlusStdDev.toDouble) / maxTimePerEventInBatch)
         performancePercentage = averageTimePerEvent / timePerEventInMillis
       }
     }
@@ -327,5 +328,4 @@ private[eventhubs] class PartitionStatus(val nAndP: NameAndPartition,
     else
       s"PartitionStatus[$partitionInfo -> (No Update)]"
   }
-
 }

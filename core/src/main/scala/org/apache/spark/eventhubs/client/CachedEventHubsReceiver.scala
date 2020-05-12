@@ -234,13 +234,6 @@ private[client] class CachedEventHubsReceiver private (ehConf: EventHubsConf,
       awaitReceiveMessage(receiveOne(ehConf.receiverTimeout.getOrElse(DefaultReceiverTimeout),
                                      s"receive; $nAndP; seqNo: ${requestSeqNo + i}"),
                           requestSeqNo)
-    // Navid TEMP
-    if(nAndP.partitionId == 1) {
-      val tSleep: Long = 50
-      Thread.sleep(tSleep)
-      logDebug(s"NAVID: partition $nAndP slept for $tSleep millis")
-    }
-    // Divan
     // Combine and sort the data.
     val combined = first ++ theRest.flatten
     val sorted = combined.toSeq
